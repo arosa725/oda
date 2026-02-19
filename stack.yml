@@ -29,14 +29,13 @@ services:
         - "traefik.http.services.oda-backend.loadbalancer.server.port=5000"
         - "traefik.docker.network=dockermaster"
 
-  oda-frontend:
-    image: nginx:alpine
-    networks:
-      - dockermaster
-    volumes:
-      # Mapeia o diretório local para o Nginx (ajuste o caminho no servidor se necessário)
-      - /var/inetpub/wwwroot/oda:/usr/share/nginx/html:ro
-    deploy:
+oda-frontend:
+   image: nginx:alpine  # Use a imagem oficial, não a sua customizada
+   networks:
+     - dockermaster
+   volumes:
+     - /var/inetpub/wwwroot/oda:/usr/share/nginx/html:ro  # Use a pasta que você criou
+   deploy:
       mode: replicated
       replicas: 1
       resources:
