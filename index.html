@@ -2,144 +2,226 @@
 <html>
 <head>
   <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { background: #f4f7f6; padding: 15px; padding-bottom: 60px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    #reader { width: 100%; border-radius: 12px; overflow: hidden; margin-bottom: 15px; display: none; border: 3px solid #007bff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-    .card-produto { display: none; background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px; border-left: 5px solid #28a745; }
-    .historico { background: white; border-radius: 10px; padding: 12px; font-size: 0.95rem; max-height: 200px; overflow-y: auto; }
-    .item-log { border-bottom: 1px solid #eee; padding: 8px 0; display: flex; justify-content: space-between; }
-    .item-log:last-child { border-bottom: none; }
-    .badge-qtd { background-color: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 5px; font-weight: bold; }
+    body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .container { max-width: 500px; margin-top: 20px; }
+    .card { border-radius: 15px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .camera-box { width: 100%; height: 300px; background: #000; border-radius: 10px; overflow: hidden; position: relative; margin-bottom: 15px; display: none; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    #preview { width: 100%; border-radius: 10px; display: none; margin-bottom: 15px; }
+    .hidden { display: none; }
+    .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
   </style>
+  <!-- Importante para rodar no Docker/Nginx fora do Google Sheets -->
+  <script src="mock-gas.js"></script>
 </head>
 <body>
-  <div class="container text-center">
-    <h3 class="mt-3 mb-4">📋 Inventário Mobile Pilot</h3>
 
-    <div id="reader"></div>
-    <button id="btnScan" class="btn btn-primary btn-lg w-100 mb-3 shadow" onclick="iniciarScanner()">📷 LER PRÓXIMO CÓDIGO</button>
-    
-    <div id="cardProduto" class="card-produto shadow text-start animate__animated animate__fadeIn">
-      <h6 class="text-success">✔ Produto Identificado</h6>
-      <p class="mb-1"><strong>EAN:</strong> <span id="displayEan"></span></p>
-      <p class="mb-2"><strong>Nome:</strong> <span id="displayNome"></span></p>
+  <div class="loading-overlay" id="loader">
+    <div class="spinner-border text-primary" role="status"></div>
+    <span class="ms-2">Processando IA... (Verifique o log do backend)</span>
+  </div>
+
+  <div class="container">
+    <div class="card p-4">
+      <h3 class="text-center mb-4 text-primary">📚 Coletor de Gabarito</h3>
       
-      <div class="input-group mb-3 mt-3">
-        <span class="input-group-text bg-light">Quantidade</span>
-        <input type="number" id="qtdInput" class="form-control form-control-lg" inputmode="numeric" placeholder="0">
+      <!-- BUSCA DE ALUNO -->
+      <div id="etapaBusca">
+        <label class="form-label fw-bold">Buscar Aluno (Nome ou Série)</label>
+        <div class="input-group mb-3">
+          <input type="text" id="termoBusca" class="form-control" placeholder="Ex: João ou 9º ano">
+          <button class="btn btn-outline-primary" onclick="buscar()">🔍</button>
+        </div>
+        
+        <div id="resultadosBusca" class="list-group mb-3"></div>
+        
+        <div class="text-center">
+          <button class="btn btn-link text-muted" onclick="modoManual()">Não encontrou? Entrada Manual</button>
+        </div>
       </div>
-      
-      <button class="btn btn-success btn-lg w-100 shadow-sm" onclick="finalizarEnvio()">SALVAR ITEM</button>
-    </div>
 
-    <div class="text-start mt-4">
-      <h6 class="d-flex justify-content-between">
-        <span>🕒 Últimos Lidos:</span>
-        <small id="countItens" class="text-muted">0 itens</small>
-      </h6>
-      <div id="listaHistorico" class="historico shadow-sm">
-        <p class="text-muted text-center py-2">Aguardando primeira leitura do QR-CODE...</p>
+      <!-- ENTRADA MANUAL -->
+      <div id="etapaManual" class="hidden">
+        <label class="form-label fw-bold">Dados do Aluno</label>
+        <input type="text" id="manualNome" class="form-control mb-3" placeholder="Nome Completo">
+        <input type="text" id="manualSerie" class="form-control mb-3" placeholder="Série/Turma">
+        <button class="btn btn-secondary w-100" onclick="voltarBusca()">Voltar para Busca</button>
+      </div>
+
+      <!-- SELEÇÃO DE ARQUIVO / CÂMERA -->
+      <div id="etapaArquivo" class="mt-4 hidden">
+        <hr>
+        <div id="alunoSelecionado" class="alert alert-info py-2"></div>
+        
+        <div class="camera-box" id="cameraBox">
+          <video id="video" autoplay playsinline></video>
+        </div>
+        
+        <img id="preview" alt="Preview Gabarito">
+
+        <div class="d-grid gap-2">
+          <button class="btn btn-success btn-lg" onclick="iniciarCamera()" id="btnCamera">📷 TIRAR FOTO</button>
+          <button class="btn btn-primary btn-lg hidden" onclick="capturarFoto()" id="btnCapturar">📸 CAPTURAR</button>
+          
+          <label class="btn btn-outline-secondary btn-lg">
+            📁 UPLOAD ARQUIVO <input type="file" hidden accept="image/*" onchange="previewArquivo(this)">
+          </label>
+          
+          <button class="btn btn-danger btn-lg mt-3" onclick="enviarTudo()" id="btnEnviar" disabled>🚀 VINCULAR GABARITO</button>
+        </div>
       </div>
     </div>
-
-    <button class="btn btn-outline-danger w-100 mt-5 mb-4" onclick="finalizarContagem()">Encerrar Sessão</button>
   </div>
 
   <script>
-    let html5QrCode;
-    let historicoLocal = [];
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let dadosAluno = null;
+    let imagemBase64 = null;
+    let stream = null;
 
-    // Função para gerar o som de Beep
-    function tocarBeep() {
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Frequência do Bip
-      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.1); // Duração 0.1s
-    }
-
-    window.onload = () => { iniciarScanner(); };
-
-    function iniciarScanner() {
-      document.getElementById('reader').style.display = 'block';
-      document.getElementById('btnScan').style.display = 'none';
+    function buscar() {
+      const termo = document.getElementById('termoBusca').value;
+      if (!termo) return;
       
-      html5QrCode = new Html5Qrcode("reader");
-      const config = { fps: 15, qrbox: { width: 250, height: 150 } };
-
-      html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
-        tocarBeep(); // <--- Toca o som ao identificar o código
-        pararScanner();
-        procurarProduto(decodedText);
-      }).catch(err => console.error("Erro câmera: ", err));
+      console.log("[Frontend] Buscando:", termo);
+      google.script.run.withSuccessHandler(exibirResultados).buscarAlunos(termo);
     }
 
-    function pararScanner() {
-      if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-          document.getElementById('reader').style.display = 'none';
-          document.getElementById('btnScan').style.display = 'block';
+    function exibirResultados(alunos) {
+      console.log("[Frontend] Resultados recebidos:", alunos);
+      const container = document.getElementById('resultadosBusca');
+      container.innerHTML = "";
+      
+      if (alunos.length === 0) {
+        container.innerHTML = "<p class='text-danger'>Nenhum aluno encontrado.</p>";
+        return;
+      }
+
+      alunos.forEach(a => {
+        const btn = document.createElement('button');
+        btn.className = "list-group-item list-group-item-action";
+        btn.innerHTML = `<strong>${a.nome}</strong><br><small class='text-muted'>${a.serie}</small>`;
+        btn.onclick = () => selecionarAluno(a);
+        container.appendChild(btn);
+      });
+    }
+
+    function selecionarAluno(a) {
+      console.log("[Frontend] Aluno selecionado:", a);
+      dadosAluno = a;
+      document.getElementById('etapaBusca').classList.add('hidden');
+      document.getElementById('etapaManual').classList.add('hidden');
+      document.getElementById('etapaArquivo').classList.remove('hidden');
+      document.getElementById('alunoSelecionado').innerText = `Vincular para: ${a.nome} (${a.serie})`;
+    }
+
+    function modoManual() {
+      console.log("[Frontend] Modo Manual ativado");
+      document.getElementById('etapaBusca').classList.add('hidden');
+      document.getElementById('etapaManual').classList.remove('hidden');
+      document.getElementById('etapaArquivo').classList.remove('hidden');
+      dadosAluno = null;
+      document.getElementById('alunoSelecionado').innerText = "Vínculo Manual";
+    }
+
+    function voltarBusca() {
+      document.getElementById('etapaBusca').classList.remove('hidden');
+      document.getElementById('etapaManual').classList.add('hidden');
+      document.getElementById('etapaArquivo').classList.add('hidden');
+    }
+
+    function iniciarCamera() {
+      console.log("[Frontend] Iniciando Câmera");
+      document.getElementById('cameraBox').style.display = 'block';
+      document.getElementById('btnCamera').classList.add('hidden');
+      document.getElementById('btnCapturar').classList.remove('hidden');
+      document.getElementById('preview').style.display = 'none';
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(s => {
+          stream = s;
+          document.getElementById('video').srcObject = stream;
+        })
+        .catch(err => {
+          console.error("[Frontend] Erro Câmera:", err);
+          alert("Erro ao acessar câmera. Verifique permissões HTTPS.");
         });
-      }
     }
 
-    function procurarProduto(ean) {
-      google.script.run.withSuccessHandler(p => {
-        if (p) {
-          document.getElementById('displayEan').innerText = p.ean;
-          document.getElementById('displayNome').innerText = p.nome;
-          document.getElementById('cardProduto').style.display = 'block';
-          document.getElementById('qtdInput').focus();
-        } else {
-          alert("❌ Produto não cadastrado!");
-          iniciarScanner();
-        }
-      }).buscarProduto(ean);
-    }
-
-    function finalizarEnvio() {
-      const ean = document.getElementById('displayEan').innerText;
-      const nome = document.getElementById('displayNome').innerText;
-      const qtd = document.getElementById('qtdInput').value;
-
-      if(!qtd || qtd <= 0) return alert("Informe uma quantidade válida!");
-
-      google.script.run.withSuccessHandler(() => {
-        atualizarHistorico(nome, qtd);
-        document.getElementById('cardProduto').style.display = 'none';
-        document.getElementById('qtdInput').value = "";
-        iniciarScanner();
-      }).salvarContagem({ ean, nome, qtd });
-    }
-
-    function atualizarHistorico(nome, qtd) {
-      const lista = document.getElementById('listaHistorico');
-      if (historicoLocal.length === 0) lista.innerHTML = "";
+    function capturarFoto() {
+      const video = document.getElementById('video');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
       
-      historicoLocal.unshift({nome, qtd});
-      if(historicoLocal.length > 10) historicoLocal.pop(); // Mostra até 10 itens
-
-      document.getElementById('countItens').innerText = historicoLocal.length + " itens lidos";
-
-      lista.innerHTML = historicoLocal.map(item => `
-        <div class="item-log">
-          <span>${item.nome}</span>
-          <span class="badge-qtd">${item.qtd}x</span>
-        </div>
-      `).join('');
+      imagemBase64 = canvas.toDataURL('image/jpeg');
+      console.log("[Frontend] Foto capturada (Base64)");
+      pararCamera();
+      
+      const preview = document.getElementById('preview');
+      preview.src = imagemBase64;
+      preview.style.display = 'block';
+      document.getElementById('btnEnviar').disabled = false;
     }
 
-    function finalizarContagem() {
-      if(confirm("Deseja encerrar e limpar a lista visual?")) {
-        location.reload();
+    function pararCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
       }
+      document.getElementById('cameraBox').style.display = 'none';
+      document.getElementById('btnCapturar').classList.add('hidden');
+      document.getElementById('btnCamera').classList.remove('hidden');
+    }
+
+    function previewArquivo(input) {
+      if (input.files && input.files[0]) {
+        console.log("[Frontend] Arquivo selecionado:", input.files[0].name);
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          imagemBase64 = e.target.result;
+          const preview = document.getElementById('preview');
+          preview.src = imagemBase64;
+          preview.style.display = 'block';
+          document.getElementById('cameraBox').style.display = 'none';
+          document.getElementById('btnEnviar').disabled = false;
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    function enviarTudo() {
+      console.log("[Frontend] Enviando para processamento...");
+      document.getElementById('loader').style.display = 'flex';
+      
+      const payload = {
+        alunoId: dadosAluno ? dadosAluno.id : null,
+        nome: dadosAluno ? dadosAluno.nome : document.getElementById('manualNome').value,
+        serie: dadosAluno ? dadosAluno.serie : document.getElementById('manualSerie').value,
+        imagemBase64: imagemBase64
+      };
+
+      if (!payload.nome || !payload.serie) {
+        alert("Preencha Nome e Série!");
+        document.getElementById('loader').style.display = 'none';
+        return;
+      }
+
+      // Chama o mock (ou o real no GAS)
+      google.script.run.withSuccessHandler(res => {
+        console.log("[Frontend] Sucesso:", res);
+        document.getElementById('loader').style.display = 'none';
+        alert(res);
+        location.reload();
+      })
+      .withFailureHandler(err => {
+        console.error("[Frontend] Erro:", err);
+        document.getElementById('loader').style.display = 'none';
+        alert("Erro no processamento: " + err);
+      })
+      .vincularGabaritoIA(payload);
     }
   </script>
 </body>

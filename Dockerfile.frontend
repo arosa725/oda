@@ -1,11 +1,12 @@
 FROM nginx:alpine
 
-# Copia todos os arquivos da raiz (HTML e JS) para a pasta do Nginx
+# Copia todos os arquivos da raiz (HTML, JS, etc) para a pasta do Nginx
 COPY . /usr/share/nginx/html
 
-# Remove arquivos que não devem estar no frontend (como o backend e arquivos de config do GAS)
+# Garante que o mock-gas.js esteja presente e remove arquivos desnecessários
 RUN rm -rf /usr/share/nginx/html/backend \
     && rm -rf /usr/share/nginx/html/.clasp.json \
-    && rm -rf /usr/share/nginx/html/appsscript.json
+    && rm -rf /usr/share/nginx/html/appsscript.json \
+    && rm -rf /usr/share/nginx/html/.git
 
 EXPOSE 80
