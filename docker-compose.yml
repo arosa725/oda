@@ -7,7 +7,7 @@ services:
     networks:
       - dockermaster
     environment:
-      - GEMINI_API_KEY=SUA_CHAVE_AQUI
+      - GEMINI_API_KEY="AIzaSyDOfwLJx3035-JswcuI1YY-pxOsqaO4gwA"
     deploy:
       mode: replicated
       replicas: 1
