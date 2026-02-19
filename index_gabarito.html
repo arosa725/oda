@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .container { max-width: 500px; margin-top: 20px; }
+    .card { border-radius: 15px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .camera-box { width: 100%; height: 300px; background: #000; border-radius: 10px; overflow: hidden; position: relative; margin-bottom: 15px; display: none; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    #preview { width: 100%; border-radius: 10px; display: none; margin-bottom: 15px; }
+    .hidden { display: none; }
+    .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+  </style>
+</head>
+<body>
+
+  <div class="loading-overlay" id="loader">
+    <div class="spinner-border text-primary" role="status"></div>
+    <span class="ms-2">Processando IA...</span>
+  </div>
+
+  <div class="container">
+    <div class="card p-4">
+      <h3 class="text-center mb-4 text-primary">📚 Coletor de Gabarito</h3>
+      
+      <!-- BUSCA DE ALUNO -->
+      <div id="etapaBusca">
+        <label class="form-label fw-bold">Buscar Aluno (Nome ou Série)</label>
+        <div class="input-group mb-3">
+          <input type="text" id="termoBusca" class="form-control" placeholder="Ex: João ou 9º ano">
+          <button class="btn btn-outline-primary" onclick="buscar()">🔍</button>
+        </div>
+        
+        <div id="resultadosBusca" class="list-group mb-3"></div>
+        
+        <div class="text-center">
+          <button class="btn btn-link text-muted" onclick="modoManual()">Não encontrou? Entrada Manual</button>
+        </div>
+      </div>
+
+      <!-- ENTRADA MANUAL -->
+      <div id="etapaManual" class="hidden">
+        <label class="form-label fw-bold">Dados do Aluno</label>
+        <input type="text" id="manualNome" class="form-control mb-3" placeholder="Nome Completo">
+        <input type="text" id="manualSerie" class="form-control mb-3" placeholder="Série/Turma">
+        <button class="btn btn-secondary w-100" onclick="voltarBusca()">Voltar para Busca</button>
+      </div>
+
+      <!-- SELEÇÃO DE ARQUIVO / CÂMERA -->
+      <div id="etapaArquivo" class="mt-4 hidden">
+        <hr>
+        <div id="alunoSelecionado" class="alert alert-info py-2"></div>
+        
+        <div class="camera-box" id="cameraBox">
+          <video id="video" autoplay playsinline></video>
+        </div>
+        
+        <img id="preview" alt="Preview Gabarito">
+
+        <div class="d-grid gap-2">
+          <button class="btn btn-success btn-lg" onclick="iniciarCamera()" id="btnCamera">📷 TIRAR FOTO</button>
+          <button class="btn btn-primary btn-lg hidden" onclick="capturarFoto()" id="btnCapturar">📸 CAPTURAR</button>
+          
+          <label class="btn btn-outline-secondary btn-lg">
+            📁 UPLOAD ARQUIVO <input type="file" hidden accept="image/*" onchange="previewArquivo(this)">
+          </label>
+          
+          <button class="btn btn-danger btn-lg mt-3" onclick="enviarTudo()" id="btnEnviar" disabled>🚀 VINCULAR GABARITO</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let dadosAluno = null;
+    let imagemBase64 = null;
+    let stream = null;
+
+    function buscar() {
+      const termo = document.getElementById('termoBusca').value;
+      if (!termo) return;
+      
+      google.script.run.withSuccessHandler(exibirResultados).buscarAlunos(termo);
+    }
+
+    function exibirResultados(alunos) {
+      const container = document.getElementById('resultadosBusca');
+      container.innerHTML = "";
+      
+      if (alunos.length === 0) {
+        container.innerHTML = "<p class='text-danger'>Nenhum aluno encontrado.</p>";
+        return;
+      }
+
+      alunos.forEach(a => {
+        const btn = document.createElement('button');
+        btn.className = "list-group-item list-group-item-action";
+        btn.innerHTML = `<strong>${a.nome}</strong><br><small class='text-muted'>${a.serie}</small>`;
+        btn.onclick = () => selecionarAluno(a);
+        container.appendChild(btn);
+      });
+    }
+
+    function selecionarAluno(a) {
+      dadosAluno = a;
+      document.getElementById('etapaBusca').classList.add('hidden');
+      document.getElementById('etapaManual').classList.add('hidden');
+      document.getElementById('etapaArquivo').classList.remove('hidden');
+      document.getElementById('alunoSelecionado').innerText = `Vincular para: ${a.nome} (${a.serie})`;
+    }
+
+    function modoManual() {
+      document.getElementById('etapaBusca').classList.add('hidden');
+      document.getElementById('etapaManual').classList.remove('hidden');
+      document.getElementById('etapaArquivo').classList.remove('hidden');
+      dadosAluno = null;
+      document.getElementById('alunoSelecionado').innerText = "Vínculo Manual";
+    }
+
+    function voltarBusca() {
+      document.getElementById('etapaBusca').classList.remove('hidden');
+      document.getElementById('etapaManual').classList.add('hidden');
+      document.getElementById('etapaArquivo').classList.add('hidden');
+    }
+
+    // --- CÂMERA E ARQUIVO ---
+    function iniciarCamera() {
+      document.getElementById('cameraBox').style.display = 'block';
+      document.getElementById('btnCamera').classList.add('hidden');
+      document.getElementById('btnCapturar').classList.remove('hidden');
+      document.getElementById('preview').style.display = 'none';
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(s => {
+          stream = s;
+          document.getElementById('video').srcObject = stream;
+        });
+    }
+
+    function capturarFoto() {
+      const video = document.getElementById('video');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      
+      imagemBase64 = canvas.toDataURL('image/jpeg');
+      pararCamera();
+      
+      const preview = document.getElementById('preview');
+      preview.src = imagemBase64;
+      preview.style.display = 'block';
+      document.getElementById('btnEnviar').disabled = false;
+    }
+
+    function pararCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      document.getElementById('cameraBox').style.display = 'none';
+      document.getElementById('btnCapturar').classList.add('hidden');
+      document.getElementById('btnCamera').classList.remove('hidden');
+    }
+
+    function previewArquivo(input) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          imagemBase64 = e.target.result;
+          const preview = document.getElementById('preview');
+          preview.src = imagemBase64;
+          preview.style.display = 'block';
+          document.getElementById('cameraBox').style.display = 'none';
+          document.getElementById('btnEnviar').disabled = false;
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    function enviarTudo() {
+      document.getElementById('loader').style.display = 'flex';
+      
+      const payload = {
+        alunoId: dadosAluno ? dadosAluno.id : null,
+        nome: dadosAluno ? dadosAluno.nome : document.getElementById('manualNome').value,
+        serie: dadosAluno ? dadosAluno.serie : document.getElementById('manualSerie').value,
+        imagemBase64: imagemBase64
+      };
+
+      if (!payload.nome || !payload.serie) {
+        alert("Preencha Nome e Série!");
+        document.getElementById('loader').style.display = 'none';
+        return;
+      }
+
+      google.script.run.withSuccessHandler(res => {
+        alert(res);
+        location.reload();
+      }).vincularGabaritoIA(payload);
+    }
+  </script>
+</body>
+</html>

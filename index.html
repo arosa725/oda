@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { background: #f4f7f6; padding: 15px; padding-bottom: 60px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; margin-bottom: 15px; display: none; border: 3px solid #007bff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .card-produto { display: none; background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px; border-left: 5px solid #28a745; }
+    .historico { background: white; border-radius: 10px; padding: 12px; font-size: 0.95rem; max-height: 200px; overflow-y: auto; }
+    .item-log { border-bottom: 1px solid #eee; padding: 8px 0; display: flex; justify-content: space-between; }
+    .item-log:last-child { border-bottom: none; }
+    .badge-qtd { background-color: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 5px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container text-center">
+    <h3 class="mt-3 mb-4">📋 Inventário Mobile Pilot</h3>
+
+    <div id="reader"></div>
+    <button id="btnScan" class="btn btn-primary btn-lg w-100 mb-3 shadow" onclick="iniciarScanner()">📷 LER PRÓXIMO CÓDIGO</button>
+    
+    <div id="cardProduto" class="card-produto shadow text-start animate__animated animate__fadeIn">
+      <h6 class="text-success">✔ Produto Identificado</h6>
+      <p class="mb-1"><strong>EAN:</strong> <span id="displayEan"></span></p>
+      <p class="mb-2"><strong>Nome:</strong> <span id="displayNome"></span></p>
+      
+      <div class="input-group mb-3 mt-3">
+        <span class="input-group-text bg-light">Quantidade</span>
+        <input type="number" id="qtdInput" class="form-control form-control-lg" inputmode="numeric" placeholder="0">
+      </div>
+      
+      <button class="btn btn-success btn-lg w-100 shadow-sm" onclick="finalizarEnvio()">SALVAR ITEM</button>
+    </div>
+
+    <div class="text-start mt-4">
+      <h6 class="d-flex justify-content-between">
+        <span>🕒 Últimos Lidos:</span>
+        <small id="countItens" class="text-muted">0 itens</small>
+      </h6>
+      <div id="listaHistorico" class="historico shadow-sm">
+        <p class="text-muted text-center py-2">Aguardando primeira leitura do QR-CODE...</p>
+      </div>
+    </div>
+
+    <button class="btn btn-outline-danger w-100 mt-5 mb-4" onclick="finalizarContagem()">Encerrar Sessão</button>
+  </div>
+
+  <script>
+    let html5QrCode;
+    let historicoLocal = [];
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Função para gerar o som de Beep
+    function tocarBeep() {
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Frequência do Bip
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.1); // Duração 0.1s
+    }
+
+    window.onload = () => { iniciarScanner(); };
+
+    function iniciarScanner() {
+      document.getElementById('reader').style.display = 'block';
+      document.getElementById('btnScan').style.display = 'none';
+      
+      html5QrCode = new Html5Qrcode("reader");
+      const config = { fps: 15, qrbox: { width: 250, height: 150 } };
+
+      html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
+        tocarBeep(); // <--- Toca o som ao identificar o código
+        pararScanner();
+        procurarProduto(decodedText);
+      }).catch(err => console.error("Erro câmera: ", err));
+    }
+
+    function pararScanner() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          document.getElementById('reader').style.display = 'none';
+          document.getElementById('btnScan').style.display = 'block';
+        });
+      }
+    }
+
+    function procurarProduto(ean) {
+      google.script.run.withSuccessHandler(p => {
+        if (p) {
+          document.getElementById('displayEan').innerText = p.ean;
+          document.getElementById('displayNome').innerText = p.nome;
+          document.getElementById('cardProduto').style.display = 'block';
+          document.getElementById('qtdInput').focus();
+        } else {
+          alert("❌ Produto não cadastrado!");
+          iniciarScanner();
+        }
+      }).buscarProduto(ean);
+    }
+
+    function finalizarEnvio() {
+      const ean = document.getElementById('displayEan').innerText;
+      const nome = document.getElementById('displayNome').innerText;
+      const qtd = document.getElementById('qtdInput').value;
+
+      if(!qtd || qtd <= 0) return alert("Informe uma quantidade válida!");
+
+      google.script.run.withSuccessHandler(() => {
+        atualizarHistorico(nome, qtd);
+        document.getElementById('cardProduto').style.display = 'none';
+        document.getElementById('qtdInput').value = "";
+        iniciarScanner();
+      }).salvarContagem({ ean, nome, qtd });
+    }
+
+    function atualizarHistorico(nome, qtd) {
+      const lista = document.getElementById('listaHistorico');
+      if (historicoLocal.length === 0) lista.innerHTML = "";
+      
+      historicoLocal.unshift({nome, qtd});
+      if(historicoLocal.length > 10) historicoLocal.pop(); // Mostra até 10 itens
+
+      document.getElementById('countItens').innerText = historicoLocal.length + " itens lidos";
+
+      lista.innerHTML = historicoLocal.map(item => `
+        <div class="item-log">
+          <span>${item.nome}</span>
+          <span class="badge-qtd">${item.qtd}x</span>
+        </div>
+      `).join('');
+    }
+
+    function finalizarContagem() {
+      if(confirm("Deseja encerrar e limpar a lista visual?")) {
+        location.reload();
+      }
+    }
+  </script>
+</body>
+</html>

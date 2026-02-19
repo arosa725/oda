@@ -1,0 +1,62 @@
+version: "3.7"
+
+services:
+  oda-backend:
+    # Substitua pelo nome da sua imagem após o build ou use o contexto de build no Portainer
+    image: oda-backend:latest
+    networks:
+      - dockermaster
+    environment:
+      - GEMINI_API_KEY=SUA_CHAVE_AQUI
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+      labels:
+        - "traefik.enable=true"
+        # Router HTTPS (Porta 443)
+        - "traefik.http.routers.oda-backend.rule=Host(`api.lab.inetz.com.br`)"
+        - "traefik.http.routers.oda-backend.entrypoints=websecure"
+        - "traefik.http.routers.oda-backend.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.oda-backend.tls=true"
+        # Router HTTP (Porta 80 - Redirecionamento automático se o Traefik estiver configurado)
+        - "traefik.http.routers.oda-backend-http.rule=Host(`api.lab.inetz.com.br`)"
+        - "traefik.http.routers.oda-backend-http.entrypoints=web"
+        # Configuração de Serviço
+        - "traefik.http.services.oda-backend.loadbalancer.server.port=5000"
+        - "traefik.docker.network=dockermaster"
+
+  oda-frontend:
+    image: nginx:alpine
+    networks:
+      - dockermaster
+    volumes:
+      # Mapeia o diretório local para o Nginx (ajuste o caminho no servidor se necessário)
+      - .:/usr/share/nginx/html:ro
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 32M
+      labels:
+        - "traefik.enable=true"
+        # Router HTTPS (Porta 443)
+        - "traefik.http.routers.oda-frontend.rule=Host(`lab.inetz.com.br`)"
+        - "traefik.http.routers.oda-frontend.entrypoints=websecure"
+        - "traefik.http.routers.oda-frontend.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.oda-frontend.tls=true"
+        # Router HTTP
+        - "traefik.http.routers.oda-frontend-http.rule=Host(`lab.inetz.com.br`)"
+        - "traefik.http.routers.oda-frontend-http.entrypoints=web"
+        # Configuração de Serviço
+        - "traefik.http.services.oda-frontend.loadbalancer.server.port=80"
+        - "traefik.docker.network=dockermaster"
+
+networks:
+  dockermaster:
+    external: true
