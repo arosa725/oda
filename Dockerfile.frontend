@@ -1,0 +1,11 @@
+FROM nginx:alpine
+
+# Copia todos os arquivos da raiz (HTML e JS) para a pasta do Nginx
+COPY . /usr/share/nginx/html
+
+# Remove arquivos que não devem estar no frontend (como o backend e arquivos de config do GAS)
+RUN rm -rf /usr/share/nginx/html/backend 
+    && rm -rf /usr/share/nginx/html/.clasp.json 
+    && rm -rf /usr/share/nginx/html/appsscript.json
+
+EXPOSE 80
