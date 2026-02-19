@@ -7,7 +7,7 @@ services:
     networks:
       - dockermaster
     environment:
-      - GEMINI_API_KEY=SUA_CHAVE_AQUI
+      - GEMINI_API_KEY="AIzaSyDOfwLJx3035-JswcuI1YY-pxOsqaO4gwA"
     deploy:
       mode: replicated
       replicas: 1
@@ -36,6 +36,7 @@ services:
     volumes:
       # Mapeia o diretório local para o Nginx (ajuste o caminho no servidor se necessário)
       - .:/usr/share/nginx/html:ro
+      - /var/inetpub/wwwroot/oda:/usr/share/nginx/html:ro
     deploy:
       mode: replicated
       replicas: 1
