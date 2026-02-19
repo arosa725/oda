@@ -35,7 +35,6 @@ services:
       - dockermaster
     volumes:
       # Mapeia o diretório local para o Nginx (ajuste o caminho no servidor se necessário)
-      - .:/usr/share/nginx/html:ro
       - /var/inetpub/wwwroot/oda:/usr/share/nginx/html:ro
     deploy:
       mode: replicated
